@@ -1,7 +1,8 @@
 import logging
 import os
+import oyaml as yaml
 from pydantic import BaseModel, Field, PrivateAttr, validator
-from typing import Literal, Optional, Callable, Any, Union
+from typing import Literal, Optional, Callable, Any, Union, TextIO
 from enum import Enum
 from .errors import InvalidStep, MissingDependency, InvalidAction
 from jinja2 import Template
@@ -238,8 +239,9 @@ class Workflow(BaseModel):
     log_level: str = "NOTSET"
     env_file: Optional[Union[str, list[str]]] = None
     inputs: list[Input]
-    steps: list[Step]
+    steps: list[Step] = Field(default_factory=list)
 
+    _source_file: Optional[str] = PrivateAttr(None)
     __context__: Dict = PrivateAttr(Dict())
  
     @validator("log_level")
@@ -269,6 +271,18 @@ class Workflow(BaseModel):
                 load_dotenv(f)
             
         self.__context__.update(os.environ)
+
+    @classmethod
+    def parse_config(cls, config: TextIO):
+        data = yaml.safe_load(config)
+        instance = cls(**data)
+        instance._source_file = config.name
+        return instance
+
+    @classmethod
+    def load_config(cls, src: str):
+        with open(src, "rb") as f:
+            return cls.parse_config(f)
 
     def run(self):
         self.load_env_file()

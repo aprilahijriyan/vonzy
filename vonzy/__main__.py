@@ -1,8 +1,7 @@
 from typer import Typer, Option, Context, FileText
-from rich import print
+from rich import print, tree
 from typing import Optional
-from yaml import safe_load
-from .schema import Workflow
+from .schema import Workflow, Step
 from pathlib import Path
 
 app = Typer(
@@ -21,8 +20,7 @@ def main(
         ctx.abort()
     
     try:
-        config = safe_load(config)
-        workflow = Workflow(**config)
+        workflow = Workflow.parse_config(config)
         ctx.obj = workflow
     except Exception as e:
         print("Error:", e)
@@ -37,3 +35,31 @@ def run(
     
     workflow: Workflow = ctx.obj
     list(workflow.run())
+
+@app.command()
+def steps(
+    ctx: Context,
+):
+    """
+    Show workflow steps
+    """
+    
+    workflow: Workflow = ctx.obj
+    comp = tree.Tree(f"List of steps of the {workflow.name!r} workflow")
+    def _add_to_root(tr: tree.Tree, label: str, children: list[Step]):
+        r = tr.add(label)
+        for c in children:
+            _add_to_root(r, c.name, c.steps)
+
+    have_steps = True
+    for step in workflow.steps:
+        if step.steps:
+            _add_to_root(comp, step.name, step.steps)
+        else:
+            comp.add(step.name)
+    else:
+        have_steps = False
+        print(f"0 steps found in {workflow._source_file!r}")
+    
+    if have_steps:
+        print(comp)
