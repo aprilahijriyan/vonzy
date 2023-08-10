@@ -1,0 +1,28 @@
+[tool.poetry]
+name = "vonzy"
+version = "0.1.1a0"
+description = "A beautiful task runner for your projects!"
+authors = ["Aprila Hijriyan <hijriyan23@gmail.com>"]
+license = "MIT"
+readme = "README.md"
+
+[tool.poetry.scripts]
+vonzy = "vonzy.__main__:app"
+
+[tool.poetry.dependencies]
+python = ">=3.8,<4.0"
+typer = {extras = ["all"], version = "^0.9.0"}
+pydantic = "^1.10.9"
+oyaml = "^1.0"
+jinja2 = "^3.1.2"
+pexpect = "^4.8.0"
+inquirer = "^3.1.3"
+addict = "^2.4.0"
+
+
+[tool.poetry.group.dev.dependencies]
+python-dotenv = "^1.0.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

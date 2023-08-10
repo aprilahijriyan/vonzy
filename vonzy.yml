@@ -1,0 +1,44 @@
+name: Untitled Project Deployment
+log_level: debug
+inputs:
+  - key: ssh_host
+    description: SSH Host or IP address
+    type: text
+    required: true
+  - key: ssh_user
+    description: SSH User
+    type: text
+    required: true
+  - key: ssh_pass
+    description: SSH Password
+    type: password
+    required: true
+
+steps:
+  - id: hello
+    name: Echo Hello
+    use:
+      name: vonzy.actions.shell
+      params:
+        debug: true
+    commands:
+      - echo 'Hello'
+    steps:
+      - id: world
+        name: Echo World
+        use:
+          name: vonzy.actions.shell
+          params:
+            debug: true
+        commands:
+          - echo 'World'
+
+  - id: output
+    name: Echo Hello World
+    use:
+      name: vonzy.actions.shell
+      params:
+        debug: true
+    commands:
+      - "{{ 'echo \"' ~ steps.hello.world ~ '\"' }}"
+      - echo $HOME
