@@ -1,16 +1,14 @@
-
-from .shell import Action as ShellAction
-from pydantic import PrivateAttr, Field
-from ..logger import log
-
-import os
 import shlex
 import shutil
-import pexpect
 import typing
 
+from pydantic import Field
+
+from .shell import Action as ShellAction
+
 if typing.TYPE_CHECKING:
-    from ..schema import StepContext
+    pass
+
 
 class Action(ShellAction):
     ssh_user: str
@@ -21,7 +19,7 @@ class Action(ShellAction):
     destination: str
     options: list[str]
     excludes: list[str] = Field(default_factory=list)
-    
+
     # _process: typing.Optional[pexpect.spawn] = PrivateAttr(None)
 
     def build_args(self) -> list[str]:
@@ -29,19 +27,19 @@ class Action(ShellAction):
         for opt in self.options:
             list_opt = shlex.split(opt)
             options.extend(list_opt)
-        
+
         rsh_opts = ""
         if self.ssh_port is not None and self.ssh_port != 22:
             rsh_opts += "-p " + str(self.ssh_port)
-        
+
         if len(rsh_opts) > 1:
             options.append("--rsh")
             options.append("ssh " + rsh_opts + "")
-        
+
         for exclude_pattern in self.excludes:
             options.append(f"--exclude")
             options.append(exclude_pattern)
-        
+
         return options
 
     def initialize(self) -> None:
@@ -49,7 +47,7 @@ class Action(ShellAction):
         command = shutil.which("rsync")
         if not command:
             raise RuntimeError(f"{__name__}: rsync command not found")
-    
+
         args = self.build_args()
         args.append(self.source)
         destination = f"{self.ssh_user}@{self.ssh_host}:{self.destination}"

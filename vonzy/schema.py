@@ -1,23 +1,24 @@
 import logging
 import os
-import oyaml as yaml
-from pydantic import BaseModel, Field, PrivateAttr, validator
-from typing import Literal, Optional, Callable, Any, Union, TextIO, Type
-from enum import Enum
-from .errors import InvalidStep, MissingDependency, InvalidAction
-from jinja2 import Template
-from ast import literal_eval
-from importlib import import_module
-from .actions.base import BaseAction
-from inquirer import Text, Password, List, Checkbox, prompt
-from inquirer.questions import Question
-from .constants import BASE_RULE_JINJA_TEMPLATE
-from . import actions
-from .datatype import AttrDict
-from .logger import log
-from .util import render_step_context
-
 import string
+from ast import literal_eval
+from enum import Enum
+from importlib import import_module
+from typing import Any, Callable, Literal, Optional, TextIO, Type, Union
+
+import oyaml as yaml
+from inquirer import Checkbox, List, Password, Text, prompt
+from inquirer.questions import Question
+from jinja2 import Template
+from pydantic import BaseModel, Field, PrivateAttr, validator
+
+from . import actions
+from .actions.base import BaseAction
+from .constants import BASE_RULE_JINJA_TEMPLATE
+from .datatype import AttrDict
+from .errors import InvalidAction, InvalidStep, MissingDependency
+from .logger import log
+from .utils import render_step_context
 
 try:
     from dotenv import load_dotenv
@@ -29,6 +30,7 @@ try:
 except ImportError:
     EmailStr = None
 
+
 class Input(BaseModel):
     class Types(str, Enum):
         text = "text"
@@ -37,7 +39,7 @@ class Input(BaseModel):
         number = "number"
         list = "list"
         checkbox = "checkbox"
-        
+
     key: str
     value: Optional[str]
     type: Types
@@ -45,7 +47,7 @@ class Input(BaseModel):
     default: Optional[str]
     choices: list[str] = Field(default_factory=list)
     description: str
-    
+
     def get_value_validator(self) -> Optional[Callable[[str], Any]]:
         fn = str
         if self.type in (self.Types.checkbox, self.Types.list):
@@ -56,17 +58,17 @@ class Input(BaseModel):
             fn = EmailStr
         elif self.type == self.Types.number:
             fn = int
-        
+
         def validator(_, current: Any) -> bool:
             try:
                 fn(current)
-            except Exception as e:
+            except Exception:
                 return False
             return True
-        
+
         if fn:
             return validator
-        
+
     def get_real_value(self) -> str:
         v = self.value
         if v is None:
@@ -93,11 +95,12 @@ class Input(BaseModel):
             widget_obj = Checkbox if self.type == self.Types.checkbox else List
             widget_params.pop("validate")
             widget_params["choices"] = self.choices
-        
+
         if not valid_type:
             raise InvalidAction(f"Unknown input type {self.type!r}")
-        
+
         return widget_obj, widget_params
+
 
 class Action(BaseModel):
     name: str
@@ -105,9 +108,11 @@ class Action(BaseModel):
     klass: Optional[str] = Field("Action")
     _instance: Optional[BaseAction] = PrivateAttr(None)
 
+
 class CommandRule(BaseModel):
     rule: str
     cmd: Union[str, dict]
+
 
 class Step(BaseModel):
     id: str
@@ -115,13 +120,13 @@ class Step(BaseModel):
     use: Union[Action, str]
     rule: Optional[str]
     commands: list[Union[str, dict, CommandRule]] = Field(default_factory=list)
-    steps: list['Step'] = Field(default_factory=list)
+    steps: list["Step"] = Field(default_factory=list)
 
-    def load_action(self, sc: 'StepContext') -> Action:
+    def load_action(self, sc: "StepContext") -> Action:
         use_action = self.use
         if isinstance(use_action, str):
             use_action = Action(name=use_action)
-        
+
         log.info(f"Loading action {use_action.name!r}")
         try:
             action_name = use_action.name.lstrip(".")
@@ -133,7 +138,7 @@ class Step(BaseModel):
                     raise InvalidAction(f"Action object not found in {action_name!r}")
                 else:
                     actions.__cached_actions__[action_name] = action_class
-            
+
             log.info(f"Action {action_name!r} loaded")
             action_params = {}
             for k, v in (use_action.params or {}).items():
@@ -147,8 +152,10 @@ class Step(BaseModel):
                         nv.append(vv)
                     v = nv
                 action_params[k] = v
-            
-            log.debug(f"Initializing action {action_name!r} with params {action_params}")
+
+            log.debug(
+                f"Initializing action {action_name!r} with params {action_params}"
+            )
             action_instance = action_class(**action_params)
             log.debug(f"Action {action_name!r} initialized")
             use_action._instance = action_instance
@@ -156,14 +163,14 @@ class Step(BaseModel):
 
         except ImportError:
             raise InvalidAction(f"Action {action_name!r} not found")
-    
-    def _validate_rule(self, expr: str, sc: 'StepContext') -> bool:
+
+    def _validate_rule(self, expr: str, sc: "StepContext") -> bool:
         rule_expr = string.Template(BASE_RULE_JINJA_TEMPLATE).substitute(expr=expr)
         result = Template(rule_expr).render(sc)
         rv = literal_eval(result)
         return rv
-    
-    def run(self, sc: 'StepContext', *, parent_step_ids: Optional[list[str]] = None):
+
+    def run(self, sc: "StepContext", *, parent_step_ids: Optional[list[str]] = None):
         step_id = self.id
         steps_ctx = sc.steps
         if not isinstance(steps_ctx, AttrDict):
@@ -178,13 +185,13 @@ class Step(BaseModel):
                     _current_step_data = _current_step_data.get(sid)
                 else:
                     _current_step_data: AttrDict = steps_ctx.get(sid)
-                
+
                 if _current_step_data is None:
                     raise InvalidStep(f"Step {sid!r} not found -> {parent_step_ids}")
-    
+
         if not _current_step_data:
             _current_step_data = steps_ctx
-    
+
         realname = render_step_context(self.name, context=sc)
         self.name = realname
         log.info(f"Running step {self.name!r} #{step_id}")
@@ -196,7 +203,7 @@ class Step(BaseModel):
                 result = result_class(step=self, status="skipped", value=None)
                 _current_step_data[step_id] = {"result": result}
                 yield result
-        
+
         action_obj = self.load_action(sc)
         result = None
         try:
@@ -208,7 +215,7 @@ class Step(BaseModel):
                         log.debug(f"Command {cmd.cmd!r} skipped.")
                         continue
                     cmd = cmd.cmd
-                
+
                 kwargs = {}
                 args = ()
                 if isinstance(cmd, dict):
@@ -224,10 +231,12 @@ class Step(BaseModel):
             try:
                 action_obj._instance.cleanup()
             except Exception as e:
-                log.error(f"Error cleaning up action {action_obj.name!r} on step {self.id!r}: {e}")
+                log.error(
+                    f"Error cleaning up action {action_obj.name!r} on step {self.id!r}: {e}"
+                )
                 result = result_class(step=self, status="error", value=e)
-        
-        _R = result.dict(exclude={'step'})
+
+        _R = result.dict(exclude={"step"})
         log.info(f"Step {self.id!r} finished with status={_R['status']}")
         log.debug(f"Result {_R} for step {self.id!r}")
         _current_step_data[step_id] = {"result": result}
@@ -237,19 +246,22 @@ class Step(BaseModel):
                 parent_step_ids = [self.id]
             else:
                 parent_step_ids.append(self.id)
-            
+
             for child_result in child_step.run(sc, parent_step_ids=parent_step_ids):
                 yield child_result
+
 
 class StepResult(BaseModel):
     step: Step
     status: Literal["success", "error", "skipped"]
     value: Optional[Any]
 
+
 class StepContext(BaseModel):
     env: AttrDict
     inputs: Optional[AttrDict]
     steps: Optional[AttrDict[str, StepResult]]
+
 
 class Workflow(BaseModel):
     name: str
@@ -275,11 +287,11 @@ class Workflow(BaseModel):
             default = widget_params["default"]
             if isinstance(default, str):
                 default = render_step_context(default, context=sc)
-            
+
             widget_params["default"] = default
             widget = widget_class(**widget_params)
             questions.append(widget)
-        
+
         values = prompt(questions, raise_keyboard_interrupt=True)
         return values
 
@@ -288,7 +300,7 @@ class Workflow(BaseModel):
             env_file = self.env_file
             if not isinstance(env_file, list):
                 env_file = [env_file]
-            
+
             for f in env_file:
                 load_dotenv(f)
 
@@ -313,11 +325,11 @@ class Workflow(BaseModel):
             inputs_ctx = self.before_run(ctx)
             if inputs_ctx:
                 ctx.inputs = inputs_ctx
-            
+
             for step in self.steps:
                 for result in step.run(ctx):
                     yield result
-        except KeyboardInterrupt as e:
+        except KeyboardInterrupt:
             log.info("Cancelled by user.")
         except Exception as e:
             log.error(f"Error: {e}", exc_info=True)

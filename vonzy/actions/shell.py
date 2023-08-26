@@ -1,20 +1,17 @@
-import sys
-from .base import BaseAction
-
+import ast
+import functools
 import os
-import shlex
+import re
 import shutil
+import typing
+
 import pexpect
 import pexpect.popen_spawn
-import typing
-import functools
-import ast
-import re
+from pydantic import PrivateAttr
 
-from pydantic import PrivateAttr, Field, validator
 from ..logger import log
-from ..errors import InvalidAction
-from ..util import render_step_context
+from ..utils import render_step_context
+from .base import BaseAction
 
 if typing.TYPE_CHECKING:
     from ..schema import StepContext
@@ -24,13 +21,15 @@ if os.name == "nt":
 
 DEFAULT_SHELL = shutil.which("bash")
 
+
 def clean(s):
     """
     Taken from: https://github.com/kennethreitz/crayons/blob/b1b78c9a357e0c348a1288ee5ef0318f08ccf257/crayons.py#L135C1-L139C15
     """
-    strip = re.compile(r'(\x9B|\x1B\[)[0-?]*[ -\/]*[@-~]')
-    txt = strip.sub('', s)
-    return txt.replace('\r', '').replace('\n', '')
+    strip = re.compile(r"(\x9B|\x1B\[)[0-?]*[ -\/]*[@-~]")
+    txt = strip.sub("", s)
+    return txt.replace("\r", "").replace("\n", "")
+
 
 def _validate_return_code(fn):
     @functools.wraps(fn)
@@ -50,11 +49,13 @@ def _validate_return_code(fn):
                 returncode = ast.literal_eval(results)
             except Exception:
                 pass
-            
+
             if isinstance(returncode, int) and returncode != 0:
                 raise RuntimeError(f"cmd={args[1]} returncode={returncode!r}")
         return rv
+
     return wrapper
+
 
 class Action(BaseAction):
     cwd: typing.Optional[str] = None
@@ -91,23 +92,23 @@ class Action(BaseAction):
         cmd: str,
         *,
         expect: typing.Optional[str] = None,
-        context: typing.Optional['StepContext'] = None,
-        line_callback: typing.Optional[typing.Callable[[str], None]] = None
+        context: typing.Optional["StepContext"] = None,
+        line_callback: typing.Optional[typing.Callable[[str], None]] = None,
     ):
         if not isinstance(cmd, str):
             raise RuntimeError(f"Command {cmd!r} is not a string.")
-        
+
         if context is not None:
             cmd = render_step_context(cmd.strip(), context=context)
         if expect:
             log.debug(f"Expects {expect!r} on stdin")
             self._process.expect(expect)
-        
+
         if not expect:
             # Hide the log if it has the `expect` param. To prevent displaying unwanted text/data on the console.
             log.debug(f"Executing command {cmd!r}")
             expect = ["\r", "\n"]
-        
+
         self._process.sendline(cmd)
         should_print = False
         lines = []
@@ -121,7 +122,7 @@ class Action(BaseAction):
                     if callable(line_callback):
                         line_callback(line)
                     lines.append(line)
-                
+
                 if self._process.before == "\x1b[?2004l":
                     should_print = True
             except (pexpect.TIMEOUT, pexpect.EOF) as e:
