@@ -96,7 +96,7 @@ class Action(BaseAction):
         line_callback: typing.Optional[typing.Callable[[str], None]] = None,
     ):
         if not isinstance(cmd, str):
-            raise RuntimeError(f"Command {cmd!r} is not a string.")
+            raise RuntimeError(f"{__name__}: Command {cmd!r} is not a string.")
 
         if context is not None:
             cmd = render_step_context(cmd.strip(), context=context)
