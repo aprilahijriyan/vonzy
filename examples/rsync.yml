@@ -1,3 +1,9 @@
+# usage:
+# * cp .rsync.env.example .rsync.env
+# * Fill in the environment variable, then
+# * Run `vonzy -c rsync.yml run`
+---
+
 name: Upload Project With Rsync
 log_level: info
 env_file:
