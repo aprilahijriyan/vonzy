@@ -203,6 +203,7 @@ class Step(BaseModel):
                 result = result_class(step=self, status="skipped", value=None)
                 _current_step_data[step_id] = {"result": result}
                 yield result
+                return
 
         action_obj = self.load_action(sc)
         result = None
