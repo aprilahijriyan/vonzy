@@ -1,0 +1,57 @@
+name: Upload Project With Rsync
+log_level: info
+env_file:
+  - .rsync.env
+inputs:
+  - key: ssh_host
+    description: SSH Host or IP address
+    type: text
+    required: true
+    default: '{env.SSH_HOST}'
+  - key: ssh_port
+    description: Custom SSH Port (default to 22)
+    type: number
+    default: '{env.SSH_PORT}'
+  - key: ssh_user
+    description: SSH User
+    type: text
+    required: true
+    default: '{env.SSH_USER}'
+  - key: ssh_password
+    description: SSH Password
+    type: password
+    required: true
+  - key: source_project
+    description: Source Project Path
+    type: list
+    required: true
+    choices:
+      - sample1
+      - sample2
+
+x-rsync-options: &rsync_options
+  - -arvzP
+  - -R --inplace
+  - --delete
+  - --delete-excluded
+
+x-rsync-params: &rsync_params
+  debug: true
+  ssh_host: '{inputs.ssh_host}'
+  ssh_port: '{inputs.ssh_port}'
+  ssh_user: '{inputs.ssh_user}'
+  ssh_password: '{inputs.ssh_password}'
+  source: '.'
+  destination: '{{ "/home/" ~ inputs.ssh_user ~ "/" ~ inputs.source_project if inputs.ssh_user != "root" else "/root/" ~ inputs.source_project }}'
+  options: *rsync_options
+  # excludes:
+  #   - 'main.py'
+
+steps:
+  - id: upload
+    name: '{{ "Uploading folder " ~ inputs.source_project }}'
+    use:
+      name: vonzy.actions.rsync
+      params:
+        <<: *rsync_params
+        cwd: '{inputs.source_project}'
