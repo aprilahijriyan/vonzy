@@ -13,7 +13,7 @@ app = Typer(
 @app.callback(invoke_without_command=True)
 def main(
     ctx: Context,
-    config: Optional[FileText] = Option(Path.cwd() / "vonzy.yml", "-c", "--config", help="Configuration file"),
+    config: FileText = Option(Path.cwd() / "vonzy.yml", "-c", "--config", help="Configuration file"),
 ):
     if not config:
         print("No config file found")
@@ -43,23 +43,22 @@ def steps(
     """
     Show workflow steps
     """
-    
+
     workflow: Workflow = ctx.obj
-    comp = tree.Tree(f"List of steps of the {workflow.name!r} workflow")
+    comp = tree.Tree(f"List of steps in the {workflow.name!r} workflow")
     def _add_to_root(tr: tree.Tree, label: str, children: list[Step]):
         r = tr.add(label)
         for c in children:
             _add_to_root(r, c.name, c.steps)
 
-    have_steps = True
+    have_steps = len(workflow.steps) > 0
     for step in workflow.steps:
         if step.steps:
             _add_to_root(comp, step.name, step.steps)
         else:
             comp.add(step.name)
-    else:
-        have_steps = False
-        print(f"0 steps found in {workflow._source_file!r}")
-    
+
     if have_steps:
         print(comp)
+    else:
+        print(f"0 steps found in {workflow._source_file!r}")

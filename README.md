@@ -1,2 +1,5 @@
 # vonzy
-A beautiful task runner for your projects!
+
+Simple task runner for automation
+
+> :book: Makes your task more boring.
