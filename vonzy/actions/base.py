@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from typing import Any, Optional
 
 from pydantic import BaseModel
 
@@ -13,5 +14,5 @@ class BaseAction(ABC, BaseModel):
         pass
 
     @abstractmethod
-    def execute(self, *args, context: dict = None) -> None:
+    def execute(self, *args, context: Optional[dict[Any, Any]] = None) -> None:
         pass
