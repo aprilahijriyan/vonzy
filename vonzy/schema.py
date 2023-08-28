@@ -5,7 +5,7 @@ from ast import literal_eval
 from enum import Enum
 from importlib import import_module
 from io import BufferedReader
-from typing import Any, Callable, Literal, Optional, Type, Union
+from typing import Any, Callable, Literal, Optional, Type, TypeVar, Union
 
 import oyaml as yaml
 from inquirer import Checkbox, List, Password, Text, prompt
@@ -30,6 +30,8 @@ try:
     from pydantic import EmailStr
 except ImportError:
     EmailStr = None  # type: ignore[assignment, misc]
+
+T = TypeVar("T")
 
 
 class Input(BaseModel):
@@ -166,7 +168,7 @@ class Step(BaseModel):
 
     def _validate_rule(self, expr: str, sc: "StepContext") -> bool:
         rule_expr = string.Template(BASE_RULE_JINJA_TEMPLATE).substitute(expr=expr)
-        result = Template(rule_expr).render(sc)
+        result = Template(rule_expr).render(sc.to_context())
         rv = literal_eval(result)
         return rv
 
@@ -195,10 +197,10 @@ class Step(BaseModel):
         realname = render_step_context(self.name, context=sc)
         self.name = realname
         log.info(f"Running step {self.name!r} #{step_id}")
-        # log.debug(f"StepContext {sc}")
         result_class = StepResult
         if self.rule:
-            if not self._validate_rule(self.rule, sc):
+            rule_passed = self._validate_rule(self.rule, sc)
+            if not rule_passed:
                 log.info(f"Step {self.id!r} skipped")
                 result = result_class(step=self, status="skipped", value=None)
                 _current_step_data[step_id] = {"result": result}
@@ -206,13 +208,12 @@ class Step(BaseModel):
                 return
 
         action_obj = self.load_action(sc)
-        # print(f"{type(action_obj._instance)}._should_print", getattr(action_obj._instance, "_should_print", False))
         result = None
         try:
             action_obj._instance.initialize()
-            for cmd in self.commands:
+            commands = action_obj._instance.handle_commands(self.commands, context=sc)
+            for cmd in commands:
                 if isinstance(cmd, CommandRule):
-                    log.debug(f"Command rule {cmd.rule!r} detected. Executing...")
                     if not self._validate_rule(cmd.rule, sc):
                         log.debug(f"Command {cmd.cmd!r} skipped.")
                         continue
@@ -237,7 +238,7 @@ class Step(BaseModel):
         _R = result.dict(exclude={"step"})
         log.info(f"Step {self.id!r} finished with status={_R['status']}")
         log.debug(f"Result {_R} for step {self.id!r}")
-        _current_step_data[step_id] = {"result": result}
+        _current_step_data[step_id] = AttrDict(result=result)
         yield result
         for child_step in self.steps:
             if parent_step_ids is None:
@@ -259,6 +260,13 @@ class StepContext(BaseModel):
     env: AttrDict
     inputs: Optional[AttrDict]
     steps: Optional[AttrDict[str, StepResult]]
+
+    def to_context(self) -> dict[str, Any]:
+        return {
+            "env": self.env,
+            "inputs": self.inputs,
+            "steps": self.steps,
+        }
 
 
 class Workflow(BaseModel):
