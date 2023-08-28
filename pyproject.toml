@@ -23,6 +23,8 @@ addict = "^2.4.0"
 [tool.poetry.group.dev.dependencies]
 python-dotenv = "^1.0.0"
 pre-commit = "^3.3.3"
+paramiko = "^3.3.1"
+mypy = "^1.5.1"
 
 [build-system]
 requires = ["poetry-core"]

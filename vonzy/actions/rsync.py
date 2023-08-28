@@ -2,7 +2,7 @@ import shlex
 import shutil
 import typing
 
-from pydantic import Field
+from pydantic import Field, SecretStr
 
 from .shell import Action as ShellAction
 
@@ -11,16 +11,20 @@ if typing.TYPE_CHECKING:
 
 
 class Action(ShellAction):
-    ssh_user: str
-    ssh_host: str
+    ssh_user: SecretStr
+    ssh_host: SecretStr
     ssh_port: typing.Optional[int]
-    ssh_password: str
+    ssh_password: SecretStr
     source: str
     destination: str
     options: list[str]
     excludes: list[str] = Field(default_factory=list)
 
     # _process: typing.Optional[pexpect.spawn] = PrivateAttr(None)
+
+    def line_callback(self, line: str):
+        if isinstance(line, str) and "Permission denied, please try again." in line:
+            raise RuntimeError(f"{__name__}: Invalid password!")
 
     def build_args(self) -> list[str]:
         options = []
@@ -50,10 +54,13 @@ class Action(ShellAction):
 
         args = self.build_args()
         args.append(self.source)
-        destination = f"{self.ssh_user}@{self.ssh_host}:{self.destination}"
+        destination = f"{self.ssh_user.get_secret_value()}@{self.ssh_host.get_secret_value()}:{self.destination}"
         args.append(destination)
         command = shlex.join([command, *args])
-        self.execute(command)
-        for line in self.execute(self.ssh_password, expect="password:"):
-            if isinstance(line, str) and "Permission denied, please try again." in line:
-                raise RuntimeError(f"{__name__}: Invalid password!")
+        with self.control_output():
+            self.execute(command)
+            self.execute(
+                self.ssh_password.get_secret_value(),
+                expect="password:",
+                line_callback=self.line_callback,
+            )

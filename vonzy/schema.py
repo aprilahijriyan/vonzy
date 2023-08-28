@@ -4,7 +4,8 @@ import string
 from ast import literal_eval
 from enum import Enum
 from importlib import import_module
-from typing import Any, Callable, Literal, Optional, TextIO, Type, Union
+from io import BufferedReader
+from typing import Any, Callable, Literal, Optional, Type, TypeVar, Union
 
 import oyaml as yaml
 from inquirer import Checkbox, List, Password, Text, prompt
@@ -23,12 +24,14 @@ from .utils import render_step_context
 try:
     from dotenv import load_dotenv
 except ImportError:
-    load_dotenv = None
+    load_dotenv = None  # type: ignore[assignment]
 
 try:
     from pydantic import EmailStr
 except ImportError:
-    EmailStr = None
+    EmailStr = None  # type: ignore[assignment, misc]
+
+T = TypeVar("T")
 
 
 class Input(BaseModel):
@@ -49,9 +52,9 @@ class Input(BaseModel):
     description: str
 
     def get_value_validator(self) -> Optional[Callable[[str], Any]]:
-        fn = str
+        fn: Optional[Callable[[str], Any]] = str
         if self.type in (self.Types.checkbox, self.Types.list):
-            fn = None
+            fn = None  # type: ignore[assignment]
         elif self.type == self.Types.email:
             if EmailStr is None:
                 raise MissingDependency("email-validator")
@@ -69,7 +72,7 @@ class Input(BaseModel):
         if fn:
             return validator
 
-    def get_real_value(self) -> str:
+    def get_real_value(self) -> Optional[str]:
         v = self.value
         if v is None:
             v = self.default
@@ -119,7 +122,7 @@ class Step(BaseModel):
     name: str
     use: Union[Action, str]
     rule: Optional[str]
-    commands: list[Union[str, dict, CommandRule]] = Field(default_factory=list)
+    commands: list[Union[str, CommandRule]] = Field(default_factory=list)
     steps: list["Step"] = Field(default_factory=list)
 
     def load_action(self, sc: "StepContext") -> Action:
@@ -133,7 +136,9 @@ class Step(BaseModel):
             action_class = actions.__cached_actions__.get(action_name)
             if not action_class:
                 action_module = import_module(action_name)
-                action_class = getattr(action_module, use_action.klass, None)
+                action_class: Optional[BaseAction] = getattr(
+                    action_module, use_action.klass, None
+                )
                 if action_class is None:
                     raise InvalidAction(f"Action object not found in {action_name!r}")
                 else:
@@ -153,11 +158,8 @@ class Step(BaseModel):
                     v = nv
                 action_params[k] = v
 
-            log.debug(
-                f"Initializing action {action_name!r} with params {action_params}"
-            )
             action_instance = action_class(**action_params)
-            log.debug(f"Action {action_name!r} initialized")
+            log.debug(f"Action {action_instance} initialized")
             use_action._instance = action_instance
             return use_action
 
@@ -166,7 +168,7 @@ class Step(BaseModel):
 
     def _validate_rule(self, expr: str, sc: "StepContext") -> bool:
         rule_expr = string.Template(BASE_RULE_JINJA_TEMPLATE).substitute(expr=expr)
-        result = Template(rule_expr).render(sc)
+        result = Template(rule_expr).render(sc.to_context())
         rv = literal_eval(result)
         return rv
 
@@ -184,7 +186,7 @@ class Step(BaseModel):
                 if _current_step_data:
                     _current_step_data = _current_step_data.get(sid)
                 else:
-                    _current_step_data: AttrDict = steps_ctx.get(sid)
+                    _current_step_data = steps_ctx.get(sid)
 
                 if _current_step_data is None:
                     raise InvalidStep(f"Step {sid!r} not found -> {parent_step_ids}")
@@ -195,33 +197,30 @@ class Step(BaseModel):
         realname = render_step_context(self.name, context=sc)
         self.name = realname
         log.info(f"Running step {self.name!r} #{step_id}")
-        log.debug(f"StepContext {sc}")
         result_class = StepResult
         if self.rule:
-            if not self._validate_rule(self.rule, sc):
+            rule_passed = self._validate_rule(self.rule, sc)
+            if not rule_passed:
                 log.info(f"Step {self.id!r} skipped")
                 result = result_class(step=self, status="skipped", value=None)
                 _current_step_data[step_id] = {"result": result}
                 yield result
+                return
 
         action_obj = self.load_action(sc)
         result = None
         try:
             action_obj._instance.initialize()
-            for cmd in self.commands:
+            commands = action_obj._instance.handle_commands(self.commands, context=sc)
+            for cmd in commands:
                 if isinstance(cmd, CommandRule):
-                    log.debug(f"Command rule {cmd.rule!r} detected. Executing...")
                     if not self._validate_rule(cmd.rule, sc):
                         log.debug(f"Command {cmd.cmd!r} skipped.")
                         continue
                     cmd = cmd.cmd
 
                 kwargs = {}
-                args = ()
-                if isinstance(cmd, dict):
-                    kwargs.update(cmd)
-                else:
-                    args = (cmd,)
+                args = (cmd,)
                 kwargs["context"] = sc
                 action_obj._instance.execute(*args, **kwargs)
             result = result_class(step=self, status="success", value=None)
@@ -239,7 +238,7 @@ class Step(BaseModel):
         _R = result.dict(exclude={"step"})
         log.info(f"Step {self.id!r} finished with status={_R['status']}")
         log.debug(f"Result {_R} for step {self.id!r}")
-        _current_step_data[step_id] = {"result": result}
+        _current_step_data[step_id] = AttrDict(result=result)
         yield result
         for child_step in self.steps:
             if parent_step_ids is None:
@@ -261,6 +260,13 @@ class StepContext(BaseModel):
     env: AttrDict
     inputs: Optional[AttrDict]
     steps: Optional[AttrDict[str, StepResult]]
+
+    def to_context(self) -> dict[str, Any]:
+        return {
+            "env": self.env,
+            "inputs": self.inputs,
+            "steps": self.steps,
+        }
 
 
 class Workflow(BaseModel):
@@ -296,7 +302,7 @@ class Workflow(BaseModel):
         return values
 
     def load_env_file(self):
-        if load_dotenv and self.env_file:
+        if load_dotenv is not None and self.env_file:
             env_file = self.env_file
             if not isinstance(env_file, list):
                 env_file = [env_file]
@@ -305,7 +311,7 @@ class Workflow(BaseModel):
                 load_dotenv(f)
 
     @classmethod
-    def parse_config(cls, config: TextIO):
+    def parse_config(cls, config: BufferedReader):
         data = yaml.safe_load(config)
         instance = cls(**data)
         instance._source_file = config.name

@@ -4,8 +4,8 @@
 # * Run `vonzy -c rsync.yml run`
 ---
 
-name: Upload Project With Rsync
-log_level: info
+name: Simple Deployment
+log_level: debug
 env_file:
   - .rsync.env
 inputs:
@@ -41,12 +41,15 @@ x-rsync-options: &rsync_options
   - --delete
   - --delete-excluded
 
-x-rsync-params: &rsync_params
-  debug: true
+x-ssh-params: &ssh_params
   ssh_host: '{inputs.ssh_host}'
-  ssh_port: '{inputs.ssh_port}'
   ssh_user: '{inputs.ssh_user}'
+  ssh_port: '{inputs.ssh_port}'
   ssh_password: '{inputs.ssh_password}'
+
+x-rsync-params: &rsync_params
+  <<: *ssh_params
+  debug: true
   source: '.'
   destination: '{{ "/home/" ~ inputs.ssh_user ~ "/" ~ inputs.source_project if inputs.ssh_user != "root" else "/root/" ~ inputs.source_project }}'
   options: *rsync_options
@@ -61,3 +64,13 @@ steps:
       params:
         <<: *rsync_params
         cwd: '{inputs.source_project}'
+
+  - id: run_script
+    name: Run 'main.py' Script
+    rule: 'steps.upload.result.status == "success"'
+    use:
+      name: vonzy.actions.ssh
+      params: *ssh_params
+    commands:
+      - cd '{inputs.source_project}'
+      - python main.py

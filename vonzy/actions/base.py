@@ -1,6 +1,12 @@
+import typing
 from abc import ABC, abstractmethod
 
 from pydantic import BaseModel
+
+if typing.TYPE_CHECKING:
+    from vonzy.schema import StepContext
+
+T = typing.TypeVar("T")
 
 
 class BaseAction(ABC, BaseModel):
@@ -13,5 +19,12 @@ class BaseAction(ABC, BaseModel):
         pass
 
     @abstractmethod
-    def execute(self, *args, context: dict = None) -> None:
+    def execute(
+        self, *args, context: typing.Optional[dict[typing.Any, typing.Any]] = None
+    ) -> None:
         pass
+
+    def handle_commands(
+        self, commands: T, *, context: typing.Optional["StepContext"] = None
+    ) -> T:
+        return commands
