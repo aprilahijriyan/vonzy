@@ -1,3 +1,4 @@
+import typing
 from pathlib import Path
 
 from rich import print, tree
@@ -28,18 +29,25 @@ def main(
         ctx.obj = workflow
     except Exception as e:
         print("Error:", e)
+        ctx.abort()
 
 
 @app.command()
 def run(
     ctx: Context,
+    step_ids: typing.Optional[list[str]] = Option(
+        None,
+        "-s",
+        "--step",
+        help="Step IDs to run",
+    ),
 ):
     """
     Run workflow
     """
 
     workflow: Workflow = ctx.obj
-    list(workflow.run())
+    list(workflow.run(step_ids=step_ids))
 
 
 @app.command()

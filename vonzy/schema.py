@@ -125,6 +125,14 @@ class Step(BaseModel):
     commands: list[Union[str, CommandRule]] = Field(default_factory=list)
     steps: list["Step"] = Field(default_factory=list)
 
+    @validator("id", always=True)
+    def validate_id(cls, v: str):
+        if v == "result":
+            raise InvalidStep(
+                f"The step cannot have id='result' as this will be used to store the result of the step."
+            )
+        return v
+
     def load_action(self, sc: "StepContext") -> Action:
         use_action = self.use
         if isinstance(use_action, str):
@@ -203,7 +211,7 @@ class Step(BaseModel):
             if not rule_passed:
                 log.info(f"Step {self.id!r} skipped")
                 result = result_class(step=self, status="skipped", value=None)
-                _current_step_data[step_id] = {"result": result}
+                _current_step_data[step_id] = AttrDict(result=result)
                 yield result
                 return
 
@@ -322,7 +330,7 @@ class Workflow(BaseModel):
         with open(src, "rb") as f:
             return cls.parse_config(f)
 
-    def run(self):
+    def run(self, step_ids: Optional[list[str]] = None):
         self.load_env_file()
         try:
             ctx = StepContext(
@@ -332,7 +340,14 @@ class Workflow(BaseModel):
             if inputs_ctx:
                 ctx.inputs = inputs_ctx
 
+            ctx.steps = AttrDict()
+            have_steps_ids = isinstance(step_ids, list)
             for step in self.steps:
+                if have_steps_ids and step.id not in step_ids:
+                    ctx.steps[step.id] = AttrDict(
+                        result=StepResult(step=step, status="skipped", value=None)
+                    )
+                    continue
                 for result in step.run(ctx):
                     yield result
         except KeyboardInterrupt:
